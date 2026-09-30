@@ -1,4 +1,10 @@
-require('dotenv').config({ path: 'konfigurasi.env' });
+// Memuat dotenv secara aman (tidak error meskipun file .env tidak ada di Railway/GitHub)
+try {
+    require('dotenv').config();
+} catch (e) {
+    // Diabaikan karena Railway sudah menyediakan environment variables secara langsung
+}
+
 const { Client, GatewayIntentBits, AttachmentBuilder } = require('discord.js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
@@ -11,10 +17,18 @@ const client = new Client({
     ]
 });
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY.trim());
+// Mengambil API Key dari Environment Variables (Railway / .env lokal)
+const apiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
+const discordToken = process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.trim() : '';
 
-// Menggunakan gemini-1.5-flash standar
-const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+if (!apiKey || !discordToken) {
+    console.error("❌ ERROR: GEMINI_API_KEY atau DISCORD_TOKEN belum diatur di Environment Variables!");
+}
+
+const genAI = new GoogleGenerativeAI(apiKey);
+
+// MENGGUNAKAN MODEL 3.5 FLASH-LITE SESUAI DENGAN PILIHAN DI SITUS ANDA
+const textModel = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
 
 // Memori obrolan sementara (RAM) untuk tiap user
 const userSessions = new Map();
@@ -40,7 +54,8 @@ client.on('messageCreate', async (message) => {
     if (!message.content.startsWith(prefix)) return;
 
     const commandString = message.content.slice(prefix.length).trim();
-    
+    if (!commandString) return message.reply('Silakan masukkan pertanyaan atau perintahmu.');
+
     try {
         await message.channel.sendTyping();
         const lowerCommand = commandString.toLowerCase();
@@ -65,9 +80,7 @@ client.on('messageCreate', async (message) => {
         // 1. FITUR PEMBUATAN GAMBAR (Imagen)
         if (lowerCommand.startsWith('buatkan gambar') || lowerCommand.startsWith('generate image')) {
             const imagePrompt = commandString.replace(/buatkan gambar|generate image/i, '').trim();
-            if (!imagePrompt) return message.reply('Silakan masukkan deskripsi gambar yang ingin dibuat.');
-
-            const imagenEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${process.env.GEMINI_API_KEY.trim()}`;
+            const imagenEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`;
             
             const response = await axios.post(imagenEndpoint, {
                 instances: [{ prompt: imagePrompt }],
@@ -81,7 +94,7 @@ client.on('messageCreate', async (message) => {
             return message.reply({ content: `🎨 Hasil gambar untuk: **${imagePrompt}**`, files: [attachment] });
         }
 
-        // 2. FITUR VISION (Membaca Gambar yang di-upload bersama pesan)
+        // 2. FITUR VISION (Membaca Gambar yang di-upload)
         if (message.attachments.size > 0) {
             const attachment = message.attachments.first();
             if (!attachment.contentType || !attachment.contentType.startsWith('image/')) {
@@ -89,11 +102,9 @@ client.on('messageCreate', async (message) => {
             }
 
             const imagePart = await urlToGenerativePart(attachment.url, attachment.contentType);
-            const promptText = commandString || "Jelaskan gambar ini.";
-
-            // Menggunakan model single-turn untuk vision agar tidak bentrok dengan chat history
-            const visionModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-            const result = await visionModel.generateContent([promptText, imagePart]);
+            
+            const visionModel = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
+            const result = await visionModel.generateContent([commandString, imagePart]);
             
             let responseText = result.response.text();
             if (responseText.length > 2000) responseText = responseText.substring(0, 1995) + '...';
@@ -101,9 +112,7 @@ client.on('messageCreate', async (message) => {
             return message.reply(responseText);
         }
 
-        // 3. FITUR MEMORI TEKS CHAT (Hanya untuk teks murni)
-        if (!commandString) return message.reply('Silakan masukkan pertanyaan atau perintahmu.');
-
+        // 3. FITUR MEMORI TEKS CHAT
         const userId = message.author.id;
         if (!userSessions.has(userId)) {
             const chatSession = textModel.startChat({
@@ -129,4 +138,4 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-client.login(process.env.DISCORD_TOKEN.trim());
+client.login(discordToken);
