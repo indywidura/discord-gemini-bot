@@ -1,4 +1,4 @@
-require('dotenv').config({ path: 'konfigurasi.env' }); // <-- Bagian ini disesuaikan
+require('dotenv').config({ path: 'konfigurasi.env' });
 const { Client, GatewayIntentBits, AttachmentBuilder } = require('discord.js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
@@ -11,11 +11,10 @@ const client = new Client({
     ]
 });
 
-// Menambahkan .trim() untuk mencegah error karakter tersembunyi
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY.trim());
 
-// MENGGUNAKAN MODEL GEMINI-1.5-FLASH-LATEST YANG DIDUKUNG DI V1BETA
-const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+// Menggunakan gemini-1.5-flash standar
+const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 // Memori obrolan sementara (RAM) untuk tiap user
 const userSessions = new Map();
@@ -41,8 +40,7 @@ client.on('messageCreate', async (message) => {
     if (!message.content.startsWith(prefix)) return;
 
     const commandString = message.content.slice(prefix.length).trim();
-    if (!commandString) return message.reply('Silakan masukkan pertanyaan atau perintahmu.');
-
+    
     try {
         await message.channel.sendTyping();
         const lowerCommand = commandString.toLowerCase();
@@ -67,6 +65,8 @@ client.on('messageCreate', async (message) => {
         // 1. FITUR PEMBUATAN GAMBAR (Imagen)
         if (lowerCommand.startsWith('buatkan gambar') || lowerCommand.startsWith('generate image')) {
             const imagePrompt = commandString.replace(/buatkan gambar|generate image/i, '').trim();
+            if (!imagePrompt) return message.reply('Silakan masukkan deskripsi gambar yang ingin dibuat.');
+
             const imagenEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${process.env.GEMINI_API_KEY.trim()}`;
             
             const response = await axios.post(imagenEndpoint, {
@@ -78,22 +78,32 @@ client.on('messageCreate', async (message) => {
             const buffer = Buffer.from(base64Data, 'base64');
             const attachment = new AttachmentBuilder(buffer, { name: `gemini-generate-${Date.now()}.png` });
 
-            return message.reply({ content: `🎨 Hasil gambar untuk: **${imagePrompt}**`, files: [attachment]});
+            return message.reply({ content: `🎨 Hasil gambar untuk: **${imagePrompt}**`, files: [attachment] });
         }
 
-        // 2. FITUR VISION (Membaca Gambar yang di-upload)
+        // 2. FITUR VISION (Membaca Gambar yang di-upload bersama pesan)
         if (message.attachments.size > 0) {
             const attachment = message.attachments.first();
-            if (!attachment.contentType.startsWith('image/')) {
+            if (!attachment.contentType || !attachment.contentType.startsWith('image/')) {
                 return message.reply('Sistem hanya mendukung analisis untuk file gambar (JPG/PNG).');
             }
 
             const imagePart = await urlToGenerativePart(attachment.url, attachment.contentType);
-            const result = await textModel.generateContent([commandString, imagePart]);
-            return message.reply(result.response.text().substring(0, 1995));
+            const promptText = commandString || "Jelaskan gambar ini.";
+
+            // Menggunakan model single-turn untuk vision agar tidak bentrok dengan chat history
+            const visionModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const result = await visionModel.generateContent([promptText, imagePart]);
+            
+            let responseText = result.response.text();
+            if (responseText.length > 2000) responseText = responseText.substring(0, 1995) + '...';
+            
+            return message.reply(responseText);
         }
 
-        // 3. FITUR MEMORI TEKS CHAT
+        // 3. FITUR MEMORI TEKS CHAT (Hanya untuk teks murni)
+        if (!commandString) return message.reply('Silakan masukkan pertanyaan atau perintahmu.');
+
         const userId = message.author.id;
         if (!userSessions.has(userId)) {
             const chatSession = textModel.startChat({
