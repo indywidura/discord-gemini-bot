@@ -14,8 +14,8 @@ const client = new Client({
 // Menambahkan .trim() untuk mencegah error karakter tersembunyi
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY.trim());
 
-// MENGGANTI MODEL MENJADI FLASH-LATEST AGAR TIDAK ERROR 404 DI RAILWAY
-const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+// MENGGANTI MODEL KE GEMINI-PRO (MODEL PALING STABIL & STANDAR)
+const textModel = genAI.getGenerativeModel({ model: "gemini-pro" });
 
 // Memori obrolan sementara (RAM) untuk tiap user
 const userSessions = new Map();
