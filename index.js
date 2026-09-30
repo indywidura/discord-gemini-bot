@@ -1,0 +1,102 @@
+require('dotenv').config({ path: 'konfigurasi.env' }); // <-- Bagian ini disesuaikan
+const { Client, GatewayIntentBits, AttachmentBuilder } = require('discord.js');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const axios = require('axios');
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+    ]
+});
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+
+// Memori obrolan sementara (RAM) untuk tiap user
+const userSessions = new Map();
+
+client.once('ready', () => {
+    console.log(`✅ Bot Gemini Ultimate online sebagai ${client.user.tag}`);
+});
+
+async function urlToGenerativePart(url, mimeType) {
+    const response = await axios.get(url, { responseType: 'arraybuffer' });
+    return {
+        inlineData: {
+            data: Buffer.from(response.data).toString("base64"),
+            mimeType
+        }
+    };
+}
+
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    const prefix = '!ai ';
+    if (!message.content.startsWith(prefix)) return;
+
+    const commandString = message.content.slice(prefix.length).trim();
+    if (!commandString) return message.reply('Silakan masukkan pertanyaan atau perintahmu.');
+
+    try {
+        await message.channel.sendTyping();
+        const lowerCommand = commandString.toLowerCase();
+
+        // 1. FITUR PEMBUATAN GAMBAR (Imagen)
+        if (lowerCommand.startsWith('buatkan gambar') || lowerCommand.startsWith('generate image')) {
+            const imagePrompt = commandString.replace(/buatkan gambar|generate image/i, '').trim();
+            const imagenEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${process.env.GEMINI_API_KEY}`;
+            
+            const response = await axios.post(imagenEndpoint, {
+                instances: [{ prompt: imagePrompt }],
+                parameters: { sampleCount: 1 }
+            });
+
+            const base64Data = response.data.predictions[0].bytesBase64Encoded;
+            const buffer = Buffer.from(base64Data, 'base64');
+            const attachment = new AttachmentBuilder(buffer, { name: `gemini-generate-${Date.now()}.png` });
+
+            return message.reply({ content: `🎨 Hasil gambar untuk: **${imagePrompt}**`, files: [attachment] });
+        }
+
+        // 2. FITUR VISION (Membaca Gambar yang di-upload)
+        if (message.attachments.size > 0) {
+            const attachment = message.attachments.first();
+            if (!attachment.contentType.startsWith('image/')) {
+                return message.reply('Sistem hanya mendukung analisis untuk file gambar (JPG/PNG).');
+            }
+
+            const imagePart = await urlToGenerativePart(attachment.url, attachment.contentType);
+            const result = await textModel.generateContent([commandString, imagePart]);
+            return message.reply(result.response.text().substring(0, 1995));
+        }
+
+        // 3. FITUR MEMORI TEKS CHAT
+        const userId = message.author.id;
+        if (!userSessions.has(userId)) {
+            const chatSession = textModel.startChat({
+                history: [
+                    { role: "user", parts: [{ text: "Mulai sekarang, kamu adalah asisten AI yang pintar dan menggunakan bahasa yang santai." }] },
+                    { role: "model", parts: [{ text: "Siap! Aku akan mengingat instruksi ini untuk obrolan kita ke depannya." }] },
+                ],
+            });
+            userSessions.set(userId, chatSession);
+        }
+
+        const chat = userSessions.get(userId);
+        const result = await chat.sendMessage(commandString);
+        
+        let responseText = result.response.text();
+        if (responseText.length > 2000) responseText = responseText.substring(0, 1995) + '...';
+        
+        await message.reply(responseText);
+
+    } catch (error) {
+        console.error("Terjadi error pada sistem:", error?.response?.data || error.message);
+        message.reply('⚠️ Terjadi kendala saat memproses permintaan. Pastikan API key memiliki izin atau coba gunakan prompt yang berbeda.');
+    }
+});
+
+client.login(process.env.DISCORD_TOKEN);
