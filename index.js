@@ -11,7 +11,8 @@ const client = new Client({
     ]
 });
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Menambahkan .trim() untuk mencegah error karakter tersembunyi
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY.trim());
 const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
 // Memori obrolan sementara (RAM) untuk tiap user
@@ -44,10 +45,28 @@ client.on('messageCreate', async (message) => {
         await message.channel.sendTyping();
         const lowerCommand = commandString.toLowerCase();
 
+        // 0. FITUR BANTUAN (HELP COMMAND)
+        if (lowerCommand === 'help' || lowerCommand === 'bantuan') {
+            const pesanBantuan = 
+                `🤖 **Panduan Penggunaan Bot Gemini Ultimate** 🤖\n\n` +
+                `**1. Ngobrol Biasa (Chat)**\n` +
+                `Gunakan awalan \`!ai\` diikuti pertanyaanmu.\n` +
+                `> *Contoh:* \`!ai halo, ceritakan lelucon lucu\`\n\n` +
+                `**2. Membuat Gambar (Image Generation)**\n` +
+                `Gunakan awalan \`!ai buatkan gambar\` atau \`!ai generate image\`.\n` +
+                `> *Contoh:* \`!ai buatkan gambar kucing memakai kacamata hitam\`\n\n` +
+                `**3. Menganalisis Gambar (Vision)**\n` +
+                `Upload file gambar (JPG/PNG), lalu beri caption dengan awalan \`!ai\`.\n` +
+                `> *Contoh caption:* \`!ai tolong jelaskan apa yang ada di gambar ini\``;
+                
+            return message.reply(pesanBantuan);
+        }
+
         // 1. FITUR PEMBUATAN GAMBAR (Imagen)
         if (lowerCommand.startsWith('buatkan gambar') || lowerCommand.startsWith('generate image')) {
             const imagePrompt = commandString.replace(/buatkan gambar|generate image/i, '').trim();
-            const imagenEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${process.env.GEMINI_API_KEY}`;
+            // Menambahkan .trim() pada URL Imagen
+            const imagenEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${process.env.GEMINI_API_KEY.trim()}`;
             
             const response = await axios.post(imagenEndpoint, {
                 instances: [{ prompt: imagePrompt }],
