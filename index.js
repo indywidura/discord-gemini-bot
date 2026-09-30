@@ -14,8 +14,8 @@ const client = new Client({
 // Menambahkan .trim() untuk mencegah error karakter tersembunyi
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY.trim());
 
-// MENGGANTI MODEL KE GEMINI-PRO (MODEL PALING STABIL & STANDAR)
-const textModel = genAI.getGenerativeModel({ model: "gemini-pro" });
+// MENGGUNAKAN MODEL GEMINI-1.5-FLASH-LATEST YANG DIDUKUNG DI V1BETA
+const textModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
 // Memori obrolan sementara (RAM) untuk tiap user
 const userSessions = new Map();
@@ -67,7 +67,6 @@ client.on('messageCreate', async (message) => {
         // 1. FITUR PEMBUATAN GAMBAR (Imagen)
         if (lowerCommand.startsWith('buatkan gambar') || lowerCommand.startsWith('generate image')) {
             const imagePrompt = commandString.replace(/buatkan gambar|generate image/i, '').trim();
-            // Menambahkan .trim() pada URL Imagen
             const imagenEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${process.env.GEMINI_API_KEY.trim()}`;
             
             const response = await axios.post(imagenEndpoint, {
@@ -79,7 +78,7 @@ client.on('messageCreate', async (message) => {
             const buffer = Buffer.from(base64Data, 'base64');
             const attachment = new AttachmentBuilder(buffer, { name: `gemini-generate-${Date.now()}.png` });
 
-            return message.reply({ content: `🎨 Hasil gambar untuk: **${imagePrompt}**`, files: [attachment] });
+            return message.reply({ content: `🎨 Hasil gambar untuk: **${imagePrompt}**`, files: [attachment]});
         }
 
         // 2. FITUR VISION (Membaca Gambar yang di-upload)
